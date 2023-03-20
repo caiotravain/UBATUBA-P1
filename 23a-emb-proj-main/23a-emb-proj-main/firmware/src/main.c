@@ -5,13 +5,27 @@
 *
 */
 
-#include <asf.h>
-#include "conf_board.h"
+#include <stdio.h>
 #include <string.h>
+#include <assert.h>
+#include "asf.h"
+#include "fifo.h"
+#include "heartbeat_4md69.h"
 
-/************************************************************************/
-/* defines                                                              */
-/************************************************************************/
+
+/** Reference voltage for AFEC,in mv. */
+#define VOLT_REF        (3300)
+
+/** The maximal digital value */
+#define MAX_DIGITAL     (4095UL)
+
+#define STRING_EOL    "\r"
+#define STRING_HEADER "-- AFEC Temperature Sensor Example --\r\n" \
+"-- "BOARD_NAME" --\r\n" \
+"-- Compiled: "__DATE__" "__TIME__" --"STRING_EOL
+#define TASK_ADC_STACK_SIZE (1024 * 10 / sizeof(portSTACK_TYPE))
+#define TASK_ADC_STACK_PRIORITY (tskIDLE_PRIORITY)
+
 
 // LEDs
 #define LED_PIO      PIOC
@@ -250,25 +264,52 @@ void task_bluetooth(void) {
 		vTaskDelay(500 / portTICK_PERIOD_MS);
 	}
 }
+static void ler_data(void *pvParameters) {
 
+
+  while (1) {
+    h4d69_update();
+    if(h4d69_has_beat()) {
+	    pio_clear(PIOC, 1 << 8);
+
+	    } else {
+	    pio_set(PIOC, 1 << 8);
+    }
+    h4d69_convert();
+    delay_ms(10);
+	
+  }
+}
 /************************************************************************/
 /* main                                                                 */
 /************************************************************************/
 
 int main(void) {
 	/* Initialize the SAM system */
+	
 	sysclk_init();
 	board_init();
-
 	configure_console();
+	pio_configure(PIOC, PIO_OUTPUT_1, 1 << 8, PIO_DEFAULT);
+	
+	
+	h4d69_init();
+	h4d69_enable_interrupt();
 
 	/* Create task to make led blink */
 	xTaskCreate(task_bluetooth, "BLT", TASK_BLUETOOTH_STACK_SIZE, NULL,	TASK_BLUETOOTH_STACK_PRIORITY, NULL);
+	if (xTaskCreate(ler_data, "ADC", TASK_ADC_STACK_SIZE, NULL, TASK_ADC_STACK_PRIORITY, NULL) != pdPASS) {
+		printf("Failed to create test ADC task\r\n");
+	}
 
 	/* Start the scheduler. */
 	vTaskStartScheduler();
+	
+	char buffer_tx[128];
 
-	while(1){}
+	while(1){
+		
+	}
 
 	/* Will only get here if there was insufficient memory to create the idle task. */
 	return 0;
